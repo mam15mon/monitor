@@ -26,9 +26,8 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "backend": "cd ../backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev": "concurrently \"pnpm start\" \"pnpm backend\""
   },
   "eslintConfig": {
     "extends": [
@@ -47,5 +46,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
   }
 }
