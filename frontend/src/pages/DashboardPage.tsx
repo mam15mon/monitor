@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import moment from 'moment';
+import { useNavigate } from 'react-router-dom';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -51,6 +52,7 @@ const DashboardPage: React.FC = () => {
   const [regions, setRegions] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchData();
@@ -126,18 +128,21 @@ const DashboardPage: React.FC = () => {
       dataIndex: 'region',
       key: 'region',
       width: 100,
+      sorter: (a: any, b: any) => a.region.localeCompare(b.region),
     },
     {
       title: '公网IP',
       dataIndex: 'public_ip',
       key: 'public_ip',
       width: 120,
+      sorter: (a: any, b: any) => a.public_ip.localeCompare(b.public_ip),
     },
     {
       title: '端口',
       dataIndex: 'port',
       key: 'port',
       width: 80,
+      sorter: (a: any, b: any) => a.port - b.port,
     },
     {
       title: '业务系统',
@@ -145,6 +150,7 @@ const DashboardPage: React.FC = () => {
       key: 'business_system',
       width: 150,
       render: (text: string) => text || '-',
+      sorter: (a: any, b: any) => (a.business_system || '').localeCompare(b.business_system || ''),
     },
     {
       title: '平均延迟(ms)',
@@ -156,6 +162,7 @@ const DashboardPage: React.FC = () => {
         const color = value < 50 ? 'green' : value < 200 ? 'orange' : 'red';
         return <Tag color={color}>{value.toFixed(2)}</Tag>;
       },
+      sorter: (a: any, b: any) => (a.avg_latency_ms || 0) - (b.avg_latency_ms || 0),
     },
     {
       title: '丢包率(%)',
@@ -166,28 +173,37 @@ const DashboardPage: React.FC = () => {
         const color = value === 0 ? 'green' : value < 10 ? 'orange' : 'red';
         return <Tag color={color}>{value.toFixed(2)}%</Tag>;
       },
+      sorter: (a: any, b: any) => (a.packet_loss_rate || 0) - (b.packet_loss_rate || 0),
     },
     {
       title: '探测次数',
       dataIndex: 'total_probes',
       key: 'total_probes',
       width: 100,
+      sorter: (a: any, b: any) => (a.total_probes || 0) - (b.total_probes || 0),
     },
     {
       title: '成功次数',
       dataIndex: 'successful_probes',
       key: 'successful_probes',
       width: 100,
+      sorter: (a: any, b: any) => (a.successful_probes || 0) - (b.successful_probes || 0),
     },
     {
       title: '状态',
       key: 'status',
       width: 80,
-      render: (record: TargetStats) => {
+      render: (record: any) => {
         const isHealthy = record.packet_loss_rate < 5 && (record.avg_latency_ms || 0) < 200;
         return isHealthy ? 
           <CheckCircleOutlined style={{ color: 'green', fontSize: 16 }} /> :
           <CloseCircleOutlined style={{ color: 'red', fontSize: 16 }} />;
+      },
+      sorter: (a: any, b: any) => {
+        // 绿色健康优先
+        const aHealthy = a.packet_loss_rate < 5 && (a.avg_latency_ms || 0) < 200;
+        const bHealthy = b.packet_loss_rate < 5 && (b.avg_latency_ms || 0) < 200;
+        return Number(bHealthy) - Number(aHealthy);
       },
     },
   ];
@@ -210,7 +226,7 @@ const DashboardPage: React.FC = () => {
         </div>
         <Space>
           <span>欢迎, {user?.username}</span>
-          <Button onClick={() => window.open('/admin', '_blank')}>管理</Button>
+          <Button onClick={() => navigate('/admin')}>管理</Button>
           <Button onClick={logout}>退出</Button>
         </Space>
       </Header>

@@ -73,3 +73,14 @@ INSERT OR IGNORE INTO monitored_targets (region, public_ip, port, business_syste
 ('广州', '114.114.114.114', 53, '114 DNS'),
 ('深圳', '223.5.5.5', 53, '阿里DNS'),
 ('新加坡', '8.8.4.4', 53, 'Google DNS Secondary');
+
+-- 全局设置表
+CREATE TABLE IF NOT EXISTS settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value VARCHAR(255) NOT NULL
+);
+
+-- 默认探测频率为60秒
+INSERT OR IGNORE INTO settings (key, value) VALUES ('probe_interval', '60');
+-- 默认定时任务状态为 stopped
+INSERT OR IGNORE INTO settings (key, value) VALUES ('task_status', 'stopped');

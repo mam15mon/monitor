@@ -200,6 +200,34 @@ async def batch_delete_targets(
         success=True
     )
 
+@router.patch("/{target_id}/toggle-status", response_model=MonitoredTargetResponse, summary="切换监控目标状态")
+async def toggle_target_status(
+    target_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """切换监控目标的启用/禁用状态"""
+    db_target = db.query(MonitoredTarget).filter(MonitoredTarget.id == target_id).first()
+    if not db_target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="监控目标不存在"
+        )
+    
+    # 切换状态
+    db_target.is_active = not db_target.is_active
+    
+    try:
+        db.commit()
+        db.refresh(db_target)
+        return db_target
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"状态切换失败: {str(e)}"
+        )
+
 @router.get("/regions", summary="获取所有区域列表")
 async def get_regions(
     current_user: User = Depends(get_current_user),

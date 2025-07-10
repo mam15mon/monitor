@@ -43,9 +43,29 @@ const AdminPage: React.FC = () => {
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
   const [passwordForm] = Form.useForm();
+  // 添加编辑相关状态
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<MonitoredTarget | null>(null);
+  const [editForm] = Form.useForm();
+
+  // 全局探测频率相关状态
+  const [probeInterval, setProbeInterval] = useState<number>(60);
+  const [probeIntervalLoading, setProbeIntervalLoading] = useState(false);
+  const [probeIntervalInput, setProbeIntervalInput] = useState<string>('60');
+
+  // 定时任务状态相关
+  const [taskStatus, setTaskStatus] = useState<'running' | 'stopped'>('stopped');
+  const [taskStatusLoading, setTaskStatusLoading] = useState(false);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchTargets();
+  }, []);
+
+  useEffect(() => {
+    fetchProbeInterval();
+    fetchTaskStatus();
   }, []);
 
   const fetchTargets = async () => {
@@ -132,30 +152,129 @@ const AdminPage: React.FC = () => {
     }
   };
 
+  // 添加编辑处理函数
+  const handleEdit = (record: MonitoredTarget) => {
+    setEditingTarget(record);
+    editForm.setFieldsValue(record);
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEdit = async (values: any) => {
+    if (!editingTarget) return;
+    
+    try {
+      await axios.put(`/api/targets/${editingTarget.id}`, values);
+      message.success('修改成功！');
+      setEditModalVisible(false);
+      editForm.resetFields();
+      setEditingTarget(null);
+      fetchTargets();
+    } catch (error: any) {
+      message.error('修改失败: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  // 添加状态切换处理函数
+  const handleToggleStatus = async (record: MonitoredTarget) => {
+    try {
+      await axios.patch(`/api/targets/${record.id}/toggle-status`);
+      message.success(`已${record.is_active ? '禁用' : '启用'}监控目标`);
+      fetchTargets(); // 刷新数据
+    } catch (error: any) {
+      message.error('状态切换失败: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  // 获取全局探测频率
+  const fetchProbeInterval = async () => {
+    setProbeIntervalLoading(true);
+    try {
+      const res = await axios.get('/api/settings/probe-interval');
+      setProbeInterval(res.data.probe_interval);
+      setProbeIntervalInput(String(res.data.probe_interval));
+    } catch (e) {
+      message.error('获取探测频率失败');
+    } finally {
+      setProbeIntervalLoading(false);
+    }
+  };
+
+  // 修改全局探测频率
+  const handleProbeIntervalSave = async () => {
+    const value = parseInt(probeIntervalInput, 10);
+    if (isNaN(value) || value < 10 || value > 86400) {
+      message.error('请输入10~86400之间的秒数');
+      return;
+    }
+    setProbeIntervalLoading(true);
+    try {
+      await axios.post('/api/settings/probe-interval', { value }, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      setProbeInterval(value);
+      message.success('探测频率已更新');
+    } catch (e) {
+      message.error('设置探测频率失败');
+    } finally {
+      setProbeIntervalLoading(false);
+    }
+  };
+
+  // 获取定时任务状态
+  const fetchTaskStatus = async () => {
+    setTaskStatusLoading(true);
+    try {
+      const res = await axios.get('/api/settings/task-status');
+      setTaskStatus(res.data.task_status);
+    } catch (e) {
+      message.error('获取定时任务状态失败');
+    } finally {
+      setTaskStatusLoading(false);
+    }
+  };
+
+  // 设置定时任务状态
+  const handleTaskStatusChange = async (status: 'running' | 'stopped') => {
+    setTaskStatusLoading(true);
+    try {
+      await axios.post('/api/settings/task-status', { status });
+      setTaskStatus(status);
+      message.success(`定时任务已${status === 'running' ? '开启' : '关闭'}`);
+    } catch (e) {
+      message.error('设置定时任务状态失败');
+    } finally {
+      setTaskStatusLoading(false);
+    }
+  };
+
   const columns = [
     {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
       width: 60,
+      sorter: (a: any, b: any) => a.id - b.id,
     },
     {
       title: '区域',
       dataIndex: 'region',
       key: 'region',
       width: 100,
+      sorter: (a: any, b: any) => a.region.localeCompare(b.region),
     },
     {
       title: '公网IP',
       dataIndex: 'public_ip',
       key: 'public_ip',
       width: 120,
+      sorter: (a: any, b: any) => a.public_ip.localeCompare(b.public_ip),
     },
     {
       title: '端口',
       dataIndex: 'port',
       key: 'port',
       width: 80,
+      sorter: (a: any, b: any) => a.port - b.port,
     },
     {
       title: '业务系统',
@@ -163,6 +282,7 @@ const AdminPage: React.FC = () => {
       key: 'business_system',
       width: 150,
       render: (text: string) => text || '-',
+      sorter: (a: any, b: any) => (a.business_system || '').localeCompare(b.business_system || ''),
     },
     {
       title: '内网IP',
@@ -170,6 +290,7 @@ const AdminPage: React.FC = () => {
       key: 'internal_ip',
       width: 120,
       render: (text: string) => text || '-',
+      sorter: (a: any, b: any) => (a.internal_ip || '').localeCompare(b.internal_ip || ''),
     },
     {
       title: '内网端口',
@@ -177,17 +298,23 @@ const AdminPage: React.FC = () => {
       key: 'internal_port',
       width: 100,
       render: (text: number) => text || '-',
+      sorter: (a: any, b: any) => (a.internal_port || 0) - (b.internal_port || 0),
     },
     {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
       width: 80,
-      render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>
+      render: (active: boolean, record: MonitoredTarget) => (
+        <Tag 
+          color={active ? 'green' : 'red'}
+          style={{ cursor: 'pointer' }}
+          onClick={() => handleToggleStatus(record)}
+        >
           {active ? '启用' : '禁用'}
         </Tag>
       ),
+      sorter: (a: any, b: any) => Number(a.is_active) - Number(b.is_active),
     },
     {
       title: '创建时间',
@@ -195,6 +322,23 @@ const AdminPage: React.FC = () => {
       key: 'created_at',
       width: 150,
       render: (text: string) => moment(text).format('YYYY-MM-DD HH:mm'),
+      sorter: (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (record: MonitoredTarget) => (
+        <Space>
+          <Button 
+            type="link" 
+            size="small" 
+            onClick={() => handleEdit(record)}
+          >
+            编辑
+          </Button>
+        </Space>
+      ),
     },
   ];
 
@@ -221,7 +365,7 @@ const AdminPage: React.FC = () => {
         </div>
         <Space>
           <span>管理员: {user?.username}</span>
-          <Button onClick={() => window.open('/dashboard', '_blank')}>监控面板</Button>
+          <Button onClick={() => navigate('/dashboard')}>监控面板</Button>
           <Button onClick={logout}>退出</Button>
         </Space>
       </Header>
@@ -229,6 +373,47 @@ const AdminPage: React.FC = () => {
       <Content style={{ padding: 24 }}>
         <Tabs defaultActiveKey="targets">
           <TabPane tab="监控目标管理" key="targets">
+            <Card title="监控设置" style={{ marginBottom: 16 }}>
+              <Space direction="vertical" size="middle">
+                <Space>
+                  <span>全局探测频率（秒）:</span>
+                  <Input
+                    style={{ width: 120 }}
+                    value={probeIntervalInput}
+                    onChange={e => setProbeIntervalInput(e.target.value.replace(/[^\d]/g, ''))}
+                    disabled={probeIntervalLoading}
+                    min={10}
+                    max={86400}
+                  />
+                  <span style={{ color: '#888' }}>
+                    （范围：10~86400）
+                  </span>
+                  <Button
+                    type="primary"
+                    loading={probeIntervalLoading}
+                    onClick={handleProbeIntervalSave}
+                  >
+                    保存
+                  </Button>
+                  <span style={{ color: '#888' }}>
+                    当前：{probeInterval} 秒
+                  </span>
+                </Space>
+                <Space>
+                  <span>定时任务状态：</span>
+                  <span style={{ color: taskStatus === 'running' ? 'green' : 'red' }}>
+                    {taskStatus === 'running' ? '运行中' : '已停止'}
+                  </span>
+                  <Button
+                    type={taskStatus === 'running' ? 'default' : 'primary'}
+                    loading={taskStatusLoading}
+                    onClick={() => handleTaskStatusChange(taskStatus === 'running' ? 'stopped' : 'running')}
+                  >
+                    {taskStatus === 'running' ? '关闭定时任务' : '开启定时任务'}
+                  </Button>
+                </Space>
+              </Space>
+            </Card>
             <Card>
               <div style={{ marginBottom: 16 }}>
                 <Space>
@@ -321,7 +506,7 @@ const AdminPage: React.FC = () => {
                   <Button
                     type="primary"
                     icon={<TeamOutlined />}
-                    onClick={() => window.open('/user-manage', '_blank')}
+                    onClick={() => navigate('/user-manage')}
                   >
                     打开用户管理
                   </Button>
@@ -423,6 +608,106 @@ const AdminPage: React.FC = () => {
             placeholder="请粘贴CSV格式的数据..."
             rows={10}
           />
+        </Modal>
+
+        {/* 修改密码弹窗 */}
+        <Modal
+          title="修改密码"
+          open={changePasswordModalVisible}
+          onCancel={() => {
+            setChangePasswordModalVisible(false);
+            passwordForm.resetFields();
+          }}
+          footer={null}
+        >
+          <Form
+            form={passwordForm}
+            onFinish={handleChangePassword}
+            layout="vertical"
+          >
+            <Form.Item
+              name="oldPassword"
+              label="原密码"
+              rules={[{ required: true, message: '请输入原密码' }]}
+            >
+              <Input.Password placeholder="请输入原密码" />
+            </Form.Item>
+            <Form.Item
+              name="newPassword"
+              label="新密码"
+              rules={[{ required: true, message: '请输入新密码' }]}
+            >
+              <Input.Password placeholder="请输入新密码" />
+            </Form.Item>
+            <Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit">提交</Button>
+                <Button onClick={() => {
+                  setChangePasswordModalVisible(false);
+                  passwordForm.resetFields();
+                }}>取消</Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* 编辑目标模态框 */}
+        <Modal
+          title="编辑监控目标"
+          open={editModalVisible}
+          onCancel={() => {
+            setEditModalVisible(false);
+            editForm.resetFields();
+            setEditingTarget(null);
+          }}
+          footer={null}
+        >
+          <Form form={editForm} onFinish={handleSaveEdit} layout="vertical">
+            <Form.Item
+              name="region"
+              label="区域"
+              rules={[{ required: true, message: '请输入区域' }]}
+            >
+              <Input placeholder="如: 北京, 上海, 新加坡" />
+            </Form.Item>
+            <Form.Item
+              name="public_ip"
+              label="公网IP"
+              rules={[{ required: true, message: '请输入公网IP' }]}
+            >
+              <Input placeholder="如: 8.8.8.8" />
+            </Form.Item>
+            <Form.Item
+              name="port"
+              label="端口"
+              rules={[{ required: true, message: '请输入端口' }]}
+            >
+              <Input type="number" placeholder="如: 80, 443, 22" />
+            </Form.Item>
+            <Form.Item name="business_system" label="业务系统">
+              <Input placeholder="如: Web服务器, 数据库" />
+            </Form.Item>
+            <Form.Item name="internal_ip" label="内网IP">
+              <Input placeholder="如: 192.168.1.100" />
+            </Form.Item>
+            <Form.Item name="internal_port" label="内网端口">
+              <Input type="number" placeholder="如: 8080" />
+            </Form.Item>
+            <Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit">
+                  保存
+                </Button>
+                <Button onClick={() => {
+                  setEditModalVisible(false);
+                  editForm.resetFields();
+                  setEditingTarget(null);
+                }}>
+                  取消
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
         </Modal>
       </Content>
     </Layout>
